@@ -1,90 +1,3 @@
-export interface AccountData {
-  id: string;
-  account_number: string;
-  status: string;
-  equity: string;
-  last_equity: string;
-  buying_power: string;
-  cash: string;
-  portfolio_value: string;
-  pattern_day_trader: boolean;
-  trading_blocked: boolean;
-  transfers_blocked: boolean;
-  account_blocked: boolean;
-  daytrade_count: number;
-  daytrading_buying_power: string;
-  long_market_value: string;
-  short_market_value: string;
-}
-
-export interface Position {
-  asset_id: string;
-  symbol: string;
-  exchange: string;
-  asset_class: string;
-  avg_entry_price: string;
-  qty: string;
-  side: string;
-  market_value: string;
-  cost_basis: string;
-  unrealized_pl: string;
-  unrealized_plpc: string;
-  current_price: string;
-  lastday_price: string;
-  change_today: string;
-}
-
-export interface PortfolioHistory {
-  timestamp: number[];
-  equity: number[];
-  profit_loss: number[];
-  profit_loss_pct: number[];
-  base_value: number;
-  timeframe: string;
-}
-
-export interface Trade {
-  id: string;
-  activity_type: string;
-  symbol: string;
-  side: string;
-  qty: string;
-  price: string;
-  cum_qty: string;
-  order_id: string;
-  transaction_time: string;
-  type: string;
-}
-
-export interface Order {
-  id: string;
-  symbol: string;
-  side: string;
-  type: string;
-  qty: string;
-  filled_qty: string;
-  status: string;
-  created_at: string;
-  updated_at: string;
-  submitted_at: string;
-  limit_price: string | null;
-  stop_price: string | null;
-  time_in_force: string;
-  order_class: string;
-}
-
-export interface Quote {
-  ap: number;
-  as: number;
-  bp: number;
-  bs: number;
-  t: string;
-}
-
-export interface MarketSnapshot {
-  quotes: Record<string, Quote>;
-}
-
 // Timezone & Market types
 
 export type TimezoneKey = "london" | "new_york" | "tokyo" | "hong_kong" | "sydney";
@@ -126,14 +39,6 @@ export interface NavItem {
   label: string;
   icon: string;
   href: string;
-}
-
-// Globe
-export interface GlobeMarker {
-  location: [number, number];
-  size: number;
-  exchangeKey: TimezoneKey;
-  label: string;
 }
 
 // Bot Status / Session Liquidity

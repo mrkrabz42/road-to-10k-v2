@@ -4,7 +4,6 @@ import { Separator } from "@/components/ui/separator";
 import { MarketClock } from "@/components/cards/market-clock";
 import { MarketStatusCard } from "@/components/cards/market-status-card";
 import { TimezoneSelector } from "./timezone-selector";
-import { QuickActions } from "@/components/cards/quick-actions";
 import { TIMEZONE_OPTIONS } from "@/lib/constants";
 import type { TimezoneKey } from "@/lib/types";
 
@@ -26,10 +25,6 @@ export function RightPanel() {
             <MarketStatusCard key={opt.key} exchangeKey={opt.key as TimezoneKey} />
           ))}
         </div>
-
-        <Separator className="bg-border" />
-
-        <QuickActions />
       </div>
     </aside>
   );

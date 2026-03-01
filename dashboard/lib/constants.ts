@@ -1,25 +1,8 @@
 export const REFRESH_INTERVALS = {
-  ACCOUNT: 30_000,
-  POSITIONS: 30_000,
-  ORDERS: 30_000,
-  TRADES: 60_000,
-  MARKET_SNAPSHOT: 60_000,
-  PORTFOLIO_HISTORY: 300_000,
   BOT_STATUS: 10_000,
-  ALERTS: 10_000,
 } as const;
 
-export const TIMEZONE = "Europe/London";
-
-export const INDEX_SYMBOLS = ["SPY", "QQQ", "DIA", "IWM"] as const;
-
-export const RISK_PARAMS = {
-  MAX_RISK_PER_TRADE: 0.02,
-  MAX_POSITIONS: 5,
-  DAILY_LOSS_LIMIT: 0.05,
-} as const;
-
-import type { TimezoneKey, TimezoneOption, MarketConfig, NavItem, GlobeMarker } from "./types";
+import type { TimezoneKey, TimezoneOption, MarketConfig, NavItem } from "./types";
 
 export const LOCALSTORAGE_KEY_TZ = "mr10krabs_timezone";
 
@@ -80,12 +63,5 @@ export const NAV_ITEMS: NavItem[] = [
   { key: "backtest", label: "Backtest", icon: "CandlestickChart", href: "/backtest" },
 ];
 
-export const GLOBE_MARKERS: GlobeMarker[] = [
-  { location: [51.5074, -0.1278], size: 0.08, exchangeKey: "london", label: "LSE" },
-  { location: [40.7128, -74.006], size: 0.1, exchangeKey: "new_york", label: "NYSE" },
-  { location: [35.6762, 139.6503], size: 0.08, exchangeKey: "tokyo", label: "TSE" },
-  { location: [22.3193, 114.1694], size: 0.07, exchangeKey: "hong_kong", label: "HKEX" },
-  { location: [-33.8688, 151.2093], size: 0.07, exchangeKey: "sydney", label: "ASX" },
-];
 
 export const LOCALSTORAGE_KEY_SIDEBAR = "mr10krabs_sidebar_collapsed";
