@@ -3,6 +3,8 @@ import { REFRESH_INTERVALS } from "@/lib/constants";
 
 export interface PathwayData {
   symbol: string;
+  displayName: string;
+  shortName: string;
   timestamp: string;
   marketOpen: boolean;
   accountEquity: number;
@@ -39,11 +41,27 @@ export interface PathwayData {
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
-export function usePathway() {
-  const { data, error, isLoading } = useSWR<PathwayData>(
+export function usePathway(symbol?: string) {
+  const url = symbol ? `/api/pathway?symbol=${symbol}` : "/api/pathway";
+  const { data, error, isLoading } = useSWR<PathwayData | PathwayData[]>(
+    url,
+    fetcher,
+    { refreshInterval: REFRESH_INTERVALS.BOT_STATUS }
+  );
+
+  // If single symbol requested, data is a single object; otherwise array
+  if (symbol) {
+    return { pathway: (data as PathwayData) ?? null, error, isLoading };
+  }
+
+  return { pathway: data ?? null, error, isLoading };
+}
+
+export function useAllPathways() {
+  const { data, error, isLoading } = useSWR<PathwayData[]>(
     "/api/pathway",
     fetcher,
     { refreshInterval: REFRESH_INTERVALS.BOT_STATUS }
   );
-  return { pathway: data ?? null, error, isLoading };
+  return { pathways: data ?? [], error, isLoading };
 }

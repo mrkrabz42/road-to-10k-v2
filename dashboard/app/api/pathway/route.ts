@@ -1,29 +1,6 @@
-import { NextResponse } from "next/server";
-import { fetchData, fetchTrading } from "@/lib/alpaca";
-
-interface Bar {
-  t: string;
-  o: number;
-  h: number;
-  l: number;
-  c: number;
-  v: number;
-}
-
-async function fetchBars(symbol: string, start: string, end: string, timeframe = "1Min"): Promise<Bar[]> {
-  const all: Bar[] = [];
-  let pageToken: string | null = null;
-  do {
-    let url = `/stocks/${symbol}/bars?timeframe=${timeframe}&start=${start}&end=${end}&feed=iex&limit=10000`;
-    if (pageToken) url += `&page_token=${pageToken}`;
-    const res = await fetchData(url);
-    if (!res.ok) throw new Error(`Alpaca bars error: ${res.status}`);
-    const data = await res.json();
-    if (data.bars) all.push(...data.bars);
-    pageToken = data.next_page_token || null;
-  } while (pageToken);
-  return all;
-}
+import { NextRequest, NextResponse } from "next/server";
+import { fetchCandles, fetchPrices, fetchAccount } from "@/lib/oanda";
+import { INSTRUMENTS, type Instrument } from "@/lib/constants";
 
 function walkBackTradingDay(from: Date, days: number): Date {
   const d = new Date(from);
@@ -36,7 +13,7 @@ function walkBackTradingDay(from: Date, days: number): Date {
   return d;
 }
 
-function computeADX(bars: Bar[], period = 14): number {
+function computeADX(bars: { h: number; l: number; c: number }[], period = 14): number {
   if (bars.length < period + 1) return 0;
   let plusDMSum = 0, minusDMSum = 0, trSum = 0;
   const dxValues: number[] = [];
@@ -49,9 +26,7 @@ function computeADX(bars: Bar[], period = 14): number {
     const minusDM = prevLow - low > high - prevHigh ? Math.max(prevLow - low, 0) : 0;
 
     if (i <= period) {
-      plusDMSum += plusDM;
-      minusDMSum += minusDM;
-      trSum += tr;
+      plusDMSum += plusDM; minusDMSum += minusDM; trSum += tr;
       if (i === period) {
         const plusDI = trSum > 0 ? (plusDMSum / trSum) * 100 : 0;
         const minusDI = trSum > 0 ? (minusDMSum / trSum) * 100 : 0;
@@ -77,193 +52,160 @@ function computeADX(bars: Bar[], period = 14): number {
   return adx;
 }
 
-export async function GET() {
+async function buildPathway(inst: Instrument, accountEquity: number, livePrice: number) {
+  const now = new Date();
+  const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0));
+  const todayEnd = new Date(todayStart.getTime() + 86400000);
+  const prevDay = walkBackTradingDay(todayStart, 1);
+  const prevEnd = new Date(prevDay.getTime() + 86400000);
+  const weekStart = walkBackTradingDay(todayStart, 5);
+
+  const [todayBars, prevBars, weeklyIntraday] = await Promise.all([
+    fetchCandles(inst.symbol, todayStart.toISOString(), todayEnd.toISOString()),
+    fetchCandles(inst.symbol, prevDay.toISOString(), prevEnd.toISOString()),
+    fetchCandles(inst.symbol, weekStart.toISOString(), todayEnd.toISOString(), "5Min"),
+  ]);
+
+  const marketOpen = todayBars.length > 0;
+  const candleBars = marketOpen ? todayBars : prevBars;
+
+  let liveCandle = { open: 0, high: 0, low: 0, close: 0, volume: 0 };
+  if (candleBars.length > 0) {
+    const open = candleBars[0].o;
+    let high = -Infinity, low = Infinity, vol = 0;
+    for (const b of candleBars) {
+      if (b.h > high) high = b.h;
+      if (b.l < low) low = b.l;
+      vol += b.v;
+    }
+    let close = candleBars[candleBars.length - 1].c;
+    if (marketOpen && livePrice > 0) {
+      close = livePrice;
+      if (close > high) high = close;
+      if (close < low) low = close;
+    }
+    liveCandle = { open, high, low, close, volume: vol };
+  }
+
+  const displayPrice = livePrice || liveCandle.close;
+  const dayOpen = candleBars.length > 0 ? candleBars[0].o : 0;
+  const priceChange = displayPrice - dayOpen;
+  const priceChangePct = dayOpen > 0 ? priceChange / dayOpen : 0;
+
+  let pdh = 0, pdl = 0;
+  if (prevBars.length > 0) {
+    pdh = -Infinity; pdl = Infinity;
+    for (const b of prevBars) {
+      if (b.h > pdh) pdh = b.h;
+      if (b.l < pdl) pdl = b.l;
+    }
+  }
+
+  const currentPrice = displayPrice || liveCandle.close;
+  let targetLiquidity = { label: "P.D.H", direction: "up" as "up" | "down" };
+  if (currentPrice > 0 && pdh > 0 && pdl > 0) {
+    const distToHigh = Math.abs(pdh - currentPrice);
+    const distToLow = Math.abs(currentPrice - pdl);
+    targetLiquidity = distToHigh <= distToLow
+      ? { label: "P.D.H", direction: "up" }
+      : { label: "P.D.L", direction: "down" };
+  }
+
+  const adxBars = todayBars.length > 15 ? todayBars : prevBars;
+  const adx = computeADX(adxBars);
+  const marketState = adx > 25 ? "TREND" : adx > 15 ? "TRANSITION" : "RANGE";
+
+  let bias: "BULLISH" | "BEARISH" | "NEUTRAL" = "NEUTRAL";
+  if (liveCandle.close > 0 && liveCandle.open > 0) {
+    if (liveCandle.close > liveCandle.open && currentPrice > pdh * 0.998) bias = "BULLISH";
+    else if (liveCandle.close < liveCandle.open && currentPrice < pdl * 1.002) bias = "BEARISH";
+    else if (liveCandle.close > liveCandle.open) bias = "BULLISH";
+    else if (liveCandle.close < liveCandle.open) bias = "BEARISH";
+  }
+
+  let bullFactors = 0, bearFactors = 0;
+  if (liveCandle.close > liveCandle.open) bullFactors++; else if (liveCandle.close < liveCandle.open) bearFactors++;
+  if (marketState === "TREND") { if (bias === "BULLISH") bullFactors++; else bearFactors++; }
+  if (currentPrice > pdh) bullFactors++;
+  if (currentPrice < pdl) bearFactors++;
+  if (adx > 25) { if (bias === "BULLISH") bullFactors++; else bearFactors++; }
+  if (candleBars.length > 10) {
+    const midIdx = Math.floor(candleBars.length / 2);
+    const fAvg = candleBars.slice(0, midIdx).reduce((s, b) => s + b.c, 0) / midIdx;
+    const sAvg = candleBars.slice(midIdx).reduce((s, b) => s + b.c, 0) / (candleBars.length - midIdx);
+    if (sAvg > fAvg) bullFactors++; else bearFactors++;
+  }
+  const confidenceRatio = `${Math.max(bullFactors, 1)}/${Math.max(bearFactors, 1)}`;
+
+  let score = 50;
+  if (marketState === "TREND") score += 15; else if (marketState === "RANGE") score -= 10;
+  if (adx > 30) score += 10; else if (adx > 20) score += 5;
+  if (Math.abs(priceChangePct) < 0.002) score -= 5;
+  if (bias !== "NEUTRAL") score += 5;
+  if (bullFactors > bearFactors + 2) score += 10; else if (bearFactors > bullFactors + 2) score += 5;
+  if (currentPrice > pdh || currentPrice < pdl) score += 8;
+  score = Math.max(0, Math.min(100, Math.round(score)));
+
+  const weekLine: { time: string; price: number }[] = [];
+  for (const b of weeklyIntraday) weekLine.push({ time: b.t, price: b.c });
+
+  const dayLabels: { label: string; index: number }[] = [];
+  let lastDay = "";
+  for (let i = 0; i < weekLine.length; i++) {
+    const d = new Date(weekLine[i].time);
+    const dayStr = d.toLocaleDateString("en-US", { weekday: "long", timeZone: "America/New_York" });
+    if (dayStr !== lastDay) { dayLabels.push({ label: dayStr, index: i }); lastDay = dayStr; }
+  }
+
+  return {
+    symbol: inst.symbol,
+    displayName: inst.displayName,
+    shortName: inst.shortName,
+    timestamp: now.toISOString(),
+    marketOpen,
+    accountEquity,
+    displayPrice,
+    priceChange,
+    priceChangePct,
+    liveCandle,
+    bias,
+    marketState,
+    confidenceRatio,
+    targetLiquidity,
+    strategyScore: score,
+    weekLine,
+    dayLabels,
+    pdh,
+    pdl,
+    adx: Math.round(adx * 10) / 10,
+  };
+}
+
+export async function GET(req: NextRequest) {
   try {
-    const symbol = "SPY";
-    const now = new Date();
-    const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0));
-    const todayEnd = new Date(todayStart.getTime() + 86400000);
+    const symbolParam = req.nextUrl.searchParams.get("symbol");
 
-    // Previous trading day
-    const prevDay = walkBackTradingDay(todayStart, 1);
-    const prevEnd = new Date(prevDay.getTime() + 86400000);
-
-    // Week start — 5 trading days back for the intraday weekly chart
-    const weekStart = walkBackTradingDay(todayStart, 5);
-
-    // Fetch everything in parallel
-    const [accountRes, todayBars, prevBars, weeklyIntraday, quoteRes] = await Promise.all([
-      fetchTrading("/account"),
-      fetchBars(symbol, todayStart.toISOString(), todayEnd.toISOString()),
-      fetchBars(symbol, prevDay.toISOString(), prevEnd.toISOString()),
-      fetchBars(symbol, weekStart.toISOString(), todayEnd.toISOString(), "5Min"),
-      fetchData(`/stocks/${symbol}/quotes/latest?feed=iex`),
+    // Fetch account + live prices in parallel
+    const allSymbols = INSTRUMENTS.map((i) => i.symbol);
+    const [account, prices] = await Promise.all([
+      fetchAccount(),
+      fetchPrices(allSymbols),
     ]);
 
-    // Account equity
-    let accountEquity = 0;
-    if (accountRes.ok) {
-      const acc = await accountRes.json();
-      accountEquity = parseFloat(acc.equity ?? "0");
+    if (symbolParam) {
+      // Single instrument
+      const inst = INSTRUMENTS.find((i) => i.symbol === symbolParam);
+      if (!inst) return NextResponse.json({ error: `Unknown instrument: ${symbolParam}` }, { status: 400 });
+      const data = await buildPathway(inst, account.equity, prices[inst.symbol] ?? 0);
+      return NextResponse.json(data);
     }
 
-    // Latest quote for live price
-    let livePrice = 0;
-    if (quoteRes.ok) {
-      const q = await quoteRes.json();
-      const quote = q.quote;
-      if (quote) livePrice = quote.ap || quote.bp || 0;
-    }
+    // All instruments
+    const results = await Promise.all(
+      INSTRUMENTS.map((inst) => buildPathway(inst, account.equity, prices[inst.symbol] ?? 0))
+    );
 
-    // Determine if market is open (do we have today's bars?)
-    const marketOpen = todayBars.length > 0;
-
-    // Use today's bars if market open, otherwise previous day's bars for the candle
-    const candleBars = marketOpen ? todayBars : prevBars;
-
-    // Build daily candle from whichever bars we have
-    let liveCandle = { open: 0, high: 0, low: 0, close: 0, volume: 0 };
-    if (candleBars.length > 0) {
-      const open = candleBars[0].o;
-      let high = -Infinity, low = Infinity, vol = 0;
-      for (const b of candleBars) {
-        if (b.h > high) high = b.h;
-        if (b.l < low) low = b.l;
-        vol += b.v;
-      }
-      let close = candleBars[candleBars.length - 1].c;
-      // If market is open, use live quote for close
-      if (marketOpen && livePrice > 0) {
-        close = livePrice;
-        if (close > high) high = close;
-        if (close < low) low = close;
-      }
-      liveCandle = { open, high, low, close, volume: vol };
-    }
-
-    // The live display price = last bar close or live quote
-    const displayPrice = marketOpen
-      ? (livePrice || liveCandle.close)
-      : (livePrice || liveCandle.close);
-
-    // Day open price = open of today's bars, or previous day open if market closed
-    const dayOpen = candleBars.length > 0 ? candleBars[0].o : 0;
-    const priceChange = displayPrice - dayOpen;
-    const priceChangePct = dayOpen > 0 ? priceChange / dayOpen : 0;
-
-    // PDH/PDL from previous day bars (always from prevBars, even when market is open)
-    let pdh = 0, pdl = 0;
-    if (prevBars.length > 0) {
-      pdh = -Infinity;
-      pdl = Infinity;
-      for (const b of prevBars) {
-        if (b.h > pdh) pdh = b.h;
-        if (b.l < pdl) pdl = b.l;
-      }
-    }
-
-    // Target liquidity
-    const currentPrice = displayPrice || liveCandle.close;
-    let targetLiquidity = { label: "P.D.H", direction: "up" as "up" | "down" };
-    if (currentPrice > 0 && pdh > 0 && pdl > 0) {
-      const distToHigh = Math.abs(pdh - currentPrice);
-      const distToLow = Math.abs(currentPrice - pdl);
-      targetLiquidity = distToHigh <= distToLow
-        ? { label: "P.D.H", direction: "up" }
-        : { label: "P.D.L", direction: "down" };
-    }
-
-    // Bias + market state from ADX + price action
-    const adxBars = todayBars.length > 15 ? todayBars : prevBars;
-    const adx = computeADX(adxBars);
-    const marketState = adx > 25 ? "TREND" : adx > 15 ? "TRANSITION" : "RANGE";
-
-    let bias: "BULLISH" | "BEARISH" | "NEUTRAL" = "NEUTRAL";
-    if (liveCandle.close > 0 && liveCandle.open > 0) {
-      if (liveCandle.close > liveCandle.open && currentPrice > pdh * 0.998) {
-        bias = "BULLISH";
-      } else if (liveCandle.close < liveCandle.open && currentPrice < pdl * 1.002) {
-        bias = "BEARISH";
-      } else if (liveCandle.close > liveCandle.open) {
-        bias = "BULLISH";
-      } else if (liveCandle.close < liveCandle.open) {
-        bias = "BEARISH";
-      }
-    }
-
-    // Confidence ratio — bullish vs bearish factors
-    let bullFactors = 0, bearFactors = 0;
-    if (liveCandle.close > liveCandle.open) bullFactors++; else if (liveCandle.close < liveCandle.open) bearFactors++;
-    if (marketState === "TREND") { if (bias === "BULLISH") bullFactors++; else bearFactors++; }
-    if (currentPrice > pdh) bullFactors++;
-    if (currentPrice < pdl) bearFactors++;
-    if (adx > 25) { if (bias === "BULLISH") bullFactors++; else bearFactors++; }
-    if (candleBars.length > 10) {
-      const midIdx = Math.floor(candleBars.length / 2);
-      const fAvg = candleBars.slice(0, midIdx).reduce((s, b) => s + b.c, 0) / midIdx;
-      const sAvg = candleBars.slice(midIdx).reduce((s, b) => s + b.c, 0) / (candleBars.length - midIdx);
-      if (sAvg > fAvg) bullFactors++; else bearFactors++;
-    }
-    if (candleBars.length > 20) {
-      const recentVol = candleBars.slice(-10).reduce((s, b) => s + b.v, 0);
-      const earlyVol = candleBars.slice(0, 10).reduce((s, b) => s + b.v, 0);
-      if (recentVol > earlyVol && bias === "BULLISH") bullFactors++;
-      else if (recentVol > earlyVol && bias === "BEARISH") bearFactors++;
-    }
-    const confidenceRatio = `${Math.max(bullFactors, 1)}/${Math.max(bearFactors, 1)}`;
-
-    // Strategy score (0-100)
-    let score = 50;
-    if (marketState === "TREND") score += 15;
-    else if (marketState === "RANGE") score -= 10;
-    if (adx > 30) score += 10;
-    else if (adx > 20) score += 5;
-    if (Math.abs(priceChangePct) < 0.002) score -= 5;
-    if (bias !== "NEUTRAL") score += 5;
-    if (bullFactors > bearFactors + 2) score += 10;
-    else if (bearFactors > bullFactors + 2) score += 5;
-    if (currentPrice > pdh || currentPrice < pdl) score += 8;
-    score = Math.max(0, Math.min(100, Math.round(score)));
-
-    // Weekly intraday line — downsample 5-min bars to {time, price} for the chart
-    // Group by trading day for day labels
-    const weekLine: { time: string; price: number }[] = [];
-    for (const b of weeklyIntraday) {
-      weekLine.push({ time: b.t, price: b.c });
-    }
-
-    // Day boundaries for x-axis labels
-    const dayLabels: { label: string; index: number }[] = [];
-    let lastDay = "";
-    for (let i = 0; i < weekLine.length; i++) {
-      const d = new Date(weekLine[i].time);
-      const dayStr = d.toLocaleDateString("en-US", { weekday: "long", timeZone: "America/New_York" });
-      if (dayStr !== lastDay) {
-        dayLabels.push({ label: dayStr, index: i });
-        lastDay = dayStr;
-      }
-    }
-
-    return NextResponse.json({
-      symbol,
-      timestamp: now.toISOString(),
-      marketOpen,
-      accountEquity,
-      displayPrice,
-      priceChange,
-      priceChangePct,
-      liveCandle,
-      bias,
-      marketState,
-      confidenceRatio,
-      targetLiquidity,
-      strategyScore: score,
-      weekLine,
-      dayLabels,
-      pdh,
-      pdl,
-      adx: Math.round(adx * 10) / 10,
-    });
+    return NextResponse.json(results);
   } catch (e) {
     const message = e instanceof Error ? e.message : "Unknown error";
     return NextResponse.json({ error: `Pathway data failed: ${message}` }, { status: 500 });

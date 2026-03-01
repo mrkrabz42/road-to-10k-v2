@@ -1,8 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { usePathway, type PathwayData } from "@/lib/hooks/use-pathway";
-import { ArrowUp, ArrowDown, TrendingUp } from "lucide-react";
+import { type PathwayData } from "@/lib/hooks/use-pathway";
+import { type Instrument, INSTRUMENTS, getInstrument, formatInstrumentPrice } from "@/lib/constants";
+import { ArrowUp, ArrowDown, TrendingUp, Shield, Gem } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 function formatPrice(value: number): string {
@@ -16,6 +17,18 @@ function formatPrice(value: number): string {
 function formatPct(value: number): string {
   const sign = value >= 0 ? "+" : "";
   return `${sign}${(value * 100).toFixed(2)}%`;
+}
+
+/* ── Instrument Icon ──────────────────────────────────────────────── */
+function InstrumentIcon({ icon, flag }: { icon: Instrument["icon"]; flag: string | null }) {
+  if (flag) return <span className="text-lg">{flag}</span>;
+  switch (icon) {
+    case "trending": return <TrendingUp className="h-5 w-5 text-white/70" />;
+    case "badge": return <Shield className="h-5 w-5 text-white/70" />;
+    case "gold": return <Gem className="h-5 w-5 text-yellow-200/80" />;
+    case "silver": return <Gem className="h-5 w-5 text-zinc-200/80" />;
+    default: return <TrendingUp className="h-5 w-5 text-white/70" />;
+  }
 }
 
 /* ── Live Candle SVG ──────────────────────────────────────────────── */
@@ -38,9 +51,7 @@ function LiveCandle({ candle }: { candle: PathwayData["liveCandle"] }) {
 
   return (
     <svg width="60" height="130" viewBox="0 0 60 130" className="flex-shrink-0">
-      {/* Upper wick */}
       <line x1={wickX} y1={toY(candle.high)} x2={wickX} y2={toY(bodyTop)} stroke={color} strokeWidth="2" />
-      {/* Body */}
       <rect
         x={wickX - bodyW / 2}
         y={toY(bodyTop)}
@@ -49,98 +60,8 @@ function LiveCandle({ candle }: { candle: PathwayData["liveCandle"] }) {
         fill={color}
         rx="2"
       />
-      {/* Lower wick */}
       <line x1={wickX} y1={toY(bodyBot)} x2={wickX} y2={toY(candle.low)} stroke={color} strokeWidth="2" />
     </svg>
-  );
-}
-
-/* ── Rinnegan Eye SVG ─────────────────────────────────────────────── */
-function Rinnegan({ className }: { className?: string }) {
-  return (
-    <div className={cn("relative", className)}>
-      {/* Outer glow rings */}
-      <svg width="120" height="120" viewBox="0 0 120 120" className="absolute inset-0">
-        <defs>
-          <radialGradient id="rinneGlow" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="hsl(270, 60%, 60%)" stopOpacity="0.4" />
-            <stop offset="50%" stopColor="hsl(270, 50%, 50%)" stopOpacity="0.15" />
-            <stop offset="100%" stopColor="hsl(270, 50%, 50%)" stopOpacity="0" />
-          </radialGradient>
-        </defs>
-        <circle cx="60" cy="60" r="58" fill="url(#rinneGlow)" />
-      </svg>
-      {/* Main eye */}
-      <svg width="120" height="120" viewBox="0 0 120 120">
-        <defs>
-          <radialGradient id="rinneFill" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="hsl(270, 40%, 45%)" />
-            <stop offset="60%" stopColor="hsl(270, 50%, 55%)" />
-            <stop offset="100%" stopColor="hsl(270, 60%, 65%)" />
-          </radialGradient>
-        </defs>
-
-        {/* Background circle */}
-        <circle cx="60" cy="60" r="44" fill="url(#rinneFill)" />
-
-        {/* Concentric rings */}
-        <circle cx="60" cy="60" r="38" fill="none" stroke="hsl(270, 30%, 25%)" strokeWidth="2.5" />
-        <circle cx="60" cy="60" r="28" fill="none" stroke="hsl(270, 30%, 25%)" strokeWidth="2.5" />
-        <circle cx="60" cy="60" r="18" fill="none" stroke="hsl(270, 30%, 25%)" strokeWidth="2.5" />
-        <circle cx="60" cy="60" r="9" fill="none" stroke="hsl(270, 30%, 25%)" strokeWidth="2" />
-
-        {/* Center pupil */}
-        <circle cx="60" cy="60" r="5" fill="hsl(270, 30%, 20%)" />
-
-        {/* Tomoe on outer ring — 6 tomoe spaced evenly */}
-        {[0, 60, 120, 180, 240, 300].map((angle) => {
-          const rad = (angle * Math.PI) / 180;
-          const cx = 60 + 33 * Math.cos(rad);
-          const cy = 60 + 33 * Math.sin(rad);
-          // Tomoe: circle + curved tail
-          const tailRad = ((angle + 40) * Math.PI) / 180;
-          const tx = 60 + 33 * Math.cos(tailRad);
-          const ty = 60 + 33 * Math.sin(tailRad);
-          return (
-            <g key={angle}>
-              <circle cx={cx} cy={cy} r="4.5" fill="hsl(270, 30%, 20%)" />
-              <path
-                d={`M ${cx} ${cy} Q ${60 + 26 * Math.cos(rad + 0.3)} ${60 + 26 * Math.sin(rad + 0.3)} ${tx} ${ty}`}
-                fill="none"
-                stroke="hsl(270, 30%, 20%)"
-                strokeWidth="3"
-                strokeLinecap="round"
-              />
-            </g>
-          );
-        })}
-
-        {/* Tomoe on inner ring — 3 tomoe */}
-        {[30, 150, 270].map((angle) => {
-          const rad = (angle * Math.PI) / 180;
-          const cx = 60 + 23 * Math.cos(rad);
-          const cy = 60 + 23 * Math.sin(rad);
-          const tailRad = ((angle + 50) * Math.PI) / 180;
-          const tx = 60 + 23 * Math.cos(tailRad);
-          const ty = 60 + 23 * Math.sin(tailRad);
-          return (
-            <g key={angle}>
-              <circle cx={cx} cy={cy} r="3.5" fill="hsl(270, 30%, 20%)" />
-              <path
-                d={`M ${cx} ${cy} Q ${60 + 17 * Math.cos(rad + 0.4)} ${60 + 17 * Math.sin(rad + 0.4)} ${tx} ${ty}`}
-                fill="none"
-                stroke="hsl(270, 30%, 20%)"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-              />
-            </g>
-          );
-        })}
-
-        {/* Outer border */}
-        <circle cx="60" cy="60" r="44" fill="none" stroke="hsl(270, 30%, 25%)" strokeWidth="3" />
-      </svg>
-    </div>
   );
 }
 
@@ -167,7 +88,6 @@ function WeekChart({ weekLine, dayLabels }: { weekLine: PathwayData["weekLine"];
   const linePath = points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" ");
   const fillPath = `${linePath} L ${points[points.length - 1].x.toFixed(1)} ${(pad.top + chartH).toFixed(1)} L ${points[0].x.toFixed(1)} ${(pad.top + chartH).toFixed(1)} Z`;
 
-  // Current day marker — vertical gold bar at the latest day boundary
   const currentDayIdx = dayLabels.length > 0 ? dayLabels[dayLabels.length - 1].index : -1;
   const currentDayX = currentDayIdx >= 0 ? pad.left + (currentDayIdx / (weekLine.length - 1)) * chartW : -1;
 
@@ -180,18 +100,13 @@ function WeekChart({ weekLine, dayLabels }: { weekLine: PathwayData["weekLine"];
         </linearGradient>
       </defs>
 
-      {/* Current day vertical marker */}
       {currentDayX > 0 && (
         <rect x={currentDayX - 3} y={pad.top} width={6} height={chartH} fill="hsl(38, 80%, 55%)" rx="3" opacity="0.5" />
       )}
 
-      {/* Fill */}
       <path d={fillPath} fill="url(#weekLineFill)" />
-
-      {/* Line */}
       <path d={linePath} fill="none" stroke="hsl(210, 70%, 55%)" strokeWidth="1.5" />
 
-      {/* Day labels */}
       {dayLabels.map((dl, i) => {
         const x = pad.left + (dl.index / (weekLine.length - 1)) * chartW;
         return (
@@ -219,7 +134,6 @@ function ScoreRing({ score }: { score: number }) {
 
   return (
     <div className="relative flex items-center justify-center flex-shrink-0" style={{ width: size, height: size }}>
-      {/* White circle background */}
       <div className="absolute inset-0 rounded-full bg-card border border-border" />
       <svg width={size} height={size} className="-rotate-90 relative z-10">
         <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="hsl(225, 30%, 20%)" strokeWidth={strokeWidth} />
@@ -241,9 +155,9 @@ function ScoreRing({ score }: { score: number }) {
 }
 
 /* ── Loading Skeleton ─────────────────────────────────────────────── */
-function PathwaySkeleton() {
+export function PathwaySkeleton() {
   return (
-    <div className="rounded-2xl bg-card border border-border overflow-hidden animate-pulse max-w-lg w-full">
+    <div className="rounded-2xl bg-card border border-border overflow-hidden animate-pulse w-full">
       <div className="h-10 bg-blue-600/20" />
       <div className="p-5 space-y-4">
         <div className="h-8 w-40 bg-border/50 rounded" />
@@ -261,29 +175,31 @@ function PathwaySkeleton() {
 }
 
 /* ── Main Pathway Card ────────────────────────────────────────────── */
-export function PathwayCard() {
+export function PathwayCard({ data }: { data: PathwayData }) {
   const router = useRouter();
-  const { pathway, isLoading } = usePathway();
+  const instrument = getInstrument(data.symbol);
+  const inst = instrument ?? INSTRUMENTS[0];
 
-  if (isLoading || !pathway) return <PathwaySkeleton />;
-
-  const { accountEquity, displayPrice, priceChangePct, liveCandle, bias, marketState, confidenceRatio, targetLiquidity, strategyScore, weekLine, dayLabels } = pathway;
+  const { accountEquity, displayPrice, priceChangePct, liveCandle, bias, marketState, confidenceRatio, targetLiquidity, strategyScore, weekLine, dayLabels } = data;
   const isPositive = priceChangePct >= 0;
 
   return (
     <div
-      onClick={() => router.push(`/market?symbol=${pathway.symbol}`)}
-      className="rounded-2xl bg-card border border-border overflow-hidden max-w-lg w-full cursor-pointer hover:border-blue-500/50 transition-colors">
+      onClick={() => router.push(`/market?symbol=${data.symbol}`)}
+      className="rounded-2xl bg-card border border-border overflow-hidden w-full cursor-pointer hover:border-blue-500/50 transition-colors">
       {/* 1. Header Strip */}
-      <div className="bg-gradient-to-r from-blue-600/80 to-blue-400/60 px-5 py-2.5 flex items-center justify-between">
-        <span className="text-base font-bold text-white tracking-wide">
-          {pathway.symbol} / S&P 500
-        </span>
-        <TrendingUp className="h-5 w-5 text-white/50" />
+      <div className={cn("bg-gradient-to-r px-5 py-2.5 flex items-center justify-between", inst.headerGradient)}>
+        <div className="flex items-center gap-2">
+          <InstrumentIcon icon={inst.icon} flag={inst.flag} />
+          <span className={cn("text-base font-bold tracking-wide", inst.headerText)}>
+            {inst.displayName}
+          </span>
+        </div>
+        <span className={cn("text-xs font-semibold opacity-70", inst.headerText)}>{inst.shortName}</span>
       </div>
 
       <div className="p-5 space-y-4">
-        {/* 2. Account Equity (white, left) + 3. Live SPY Price + % (green/red, right) */}
+        {/* 2. Account Equity + 3. Live Price */}
         <div className="flex items-start justify-between">
           <p className="text-3xl font-bold text-white tracking-tight">
             {formatPrice(accountEquity)}
@@ -294,7 +210,7 @@ export function PathwayCard() {
               {formatPct(priceChangePct)}
             </div>
             <p className={cn("text-sm font-medium", isPositive ? "text-success/80" : "text-loss/80")}>
-              {formatPrice(displayPrice)}
+              ${formatInstrumentPrice(displayPrice, data.symbol)}
             </p>
           </div>
         </div>
@@ -321,7 +237,7 @@ export function PathwayCard() {
           </span>
         </div>
 
-        {/* 5. Target Liquidity + 6. Live Candle + 7. Rinnegan */}
+        {/* 5. Target Liquidity + 6. Live Candle */}
         <div className="flex items-center justify-between">
           <div className="flex-1">
             <p className="text-xs text-muted-foreground mb-1">Target liquidity:</p>
@@ -336,10 +252,6 @@ export function PathwayCard() {
           </div>
 
           <LiveCandle candle={liveCandle} />
-
-          <div className="flex-shrink-0 ml-2">
-            <Rinnegan className="w-[100px] h-[100px]" />
-          </div>
         </div>
 
         {/* 8. Weekly Intraday Chart + 9. Strategy Score */}
@@ -351,7 +263,7 @@ export function PathwayCard() {
         </div>
 
         {/* Market status indicator */}
-        {!pathway.marketOpen && (
+        {!data.marketOpen && (
           <p className="text-[10px] text-muted-foreground/50 text-center">
             Market closed — showing last trading session
           </p>

@@ -1,11 +1,11 @@
-import { NextResponse } from "next/server";
-import { fetchData } from "@/lib/alpaca";
+import { NextRequest, NextResponse } from "next/server";
+import { fetchCandles, type Bar } from "@/lib/oanda";
 
-// Session definitions (UTC) — matches bot/sessions/config.json
+// Session definitions (UTC)
 const SESSIONS = [
-  { name: "ASIA", label: "Asia / Pacific", start: 0, end: 360 },    // 00:00-06:00
-  { name: "LONDON", label: "London / Europe", start: 360, end: 720 }, // 06:00-12:00
-  { name: "NY", label: "New York", start: 810, end: 1200 },           // 13:30-20:00
+  { name: "ASIA", label: "Asia / Pacific", start: 0, end: 360 },
+  { name: "LONDON", label: "London / Europe", start: 360, end: 720 },
+  { name: "NY", label: "New York", start: 810, end: 1200 },
 ] as const;
 
 function getSessionForMinute(minuteOfDay: number): string {
@@ -42,36 +42,6 @@ function getSessionProgress(nowMinutes: number) {
   };
 }
 
-interface Bar {
-  t: string;
-  o: number;
-  h: number;
-  l: number;
-  c: number;
-  v: number;
-}
-
-async function fetchBars(symbol: string, start: string, end: string): Promise<Bar[]> {
-  const allBars: Bar[] = [];
-  let pageToken: string | null = null;
-
-  // Paginate through results (Alpaca returns max 10k bars per page)
-  do {
-    let url = `/stocks/${symbol}/bars?timeframe=1Min&start=${start}&end=${end}&feed=iex&limit=10000`;
-    if (pageToken) url += `&page_token=${pageToken}`;
-
-    const res = await fetchData(url);
-    if (!res.ok) {
-      throw new Error(`Alpaca bars API error: ${res.status}`);
-    }
-    const data = await res.json();
-    if (data.bars) allBars.push(...data.bars);
-    pageToken = data.next_page_token || null;
-  } while (pageToken);
-
-  return allBars;
-}
-
 function computeSessionLevels(bars: Bar[]) {
   const sessionData: Record<string, { highs: { price: number; time: string }[]; lows: { price: number; time: string }[]; count: number }> = {};
 
@@ -97,7 +67,6 @@ function computeSessionLevels(bars: Bar[]) {
       return { session: s.name, label: s.label, high: null, high_time: null, low: null, low_time: null, bar_count: 0 };
     }
 
-    // First occurrence tie-break for highs (max price, earliest time)
     let bestHigh = data.highs[0];
     for (const h of data.highs) {
       if (h.price > bestHigh.price) bestHigh = h;
@@ -147,31 +116,28 @@ function computeDailyExtremes(bars: Bar[]) {
   };
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    const symbol = "SPY";
+    const symbol = req.nextUrl.searchParams.get("symbol") || "NAS100_USD";
     const now = new Date();
 
-    // Today's bars
     const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0));
     const todayEnd = new Date(todayStart.getTime() + 86400000);
 
     // Previous trading day (skip weekends)
     const prevDay = new Date(todayStart.getTime() - 86400000);
     const day = prevDay.getUTCDay();
-    if (day === 0) prevDay.setTime(prevDay.getTime() - 2 * 86400000); // Sunday -> Friday
-    else if (day === 6) prevDay.setTime(prevDay.getTime() - 86400000); // Saturday -> Friday
+    if (day === 0) prevDay.setTime(prevDay.getTime() - 2 * 86400000);
+    else if (day === 6) prevDay.setTime(prevDay.getTime() - 86400000);
     const prevEnd = new Date(prevDay.getTime() + 86400000);
 
     const [todayBars, prevBars] = await Promise.all([
-      fetchBars(symbol, todayStart.toISOString(), todayEnd.toISOString()),
-      fetchBars(symbol, prevDay.toISOString(), prevEnd.toISOString()),
+      fetchCandles(symbol, todayStart.toISOString(), todayEnd.toISOString()),
+      fetchCandles(symbol, prevDay.toISOString(), prevEnd.toISOString()),
     ]);
 
     const nowMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
 
-    // Holiday fallback: if today has no bars, use prevBars for session levels
-    // and fetch one more day back for PDH/PDL
     const isHoliday = todayBars.length === 0;
     let sessionBars = todayBars;
     let dailyBars = prevBars;
@@ -181,24 +147,13 @@ export async function GET() {
       sessionBars = prevBars;
       dataDate = prevDay.toISOString().slice(0, 10);
 
-      // Fetch one more day back for PDH/PDL (skip weekends)
       const prevPrevDay = new Date(prevDay.getTime() - 86400000);
       const ppDay = prevPrevDay.getUTCDay();
       if (ppDay === 0) prevPrevDay.setTime(prevPrevDay.getTime() - 2 * 86400000);
       else if (ppDay === 6) prevPrevDay.setTime(prevPrevDay.getTime() - 86400000);
       const prevPrevEnd = new Date(prevPrevDay.getTime() + 86400000);
 
-      dailyBars = await fetchBars(symbol, prevPrevDay.toISOString(), prevPrevEnd.toISOString());
-
-      // If that day was also empty (another holiday), walk back further
-      if (dailyBars.length === 0) {
-        const ppDay2 = new Date(prevPrevDay.getTime() - 86400000);
-        const d2 = ppDay2.getUTCDay();
-        if (d2 === 0) ppDay2.setTime(ppDay2.getTime() - 2 * 86400000);
-        else if (d2 === 6) ppDay2.setTime(ppDay2.getTime() - 86400000);
-        const ppEnd2 = new Date(ppDay2.getTime() + 86400000);
-        dailyBars = await fetchBars(symbol, ppDay2.toISOString(), ppEnd2.toISOString());
-      }
+      dailyBars = await fetchCandles(symbol, prevPrevDay.toISOString(), prevPrevEnd.toISOString());
     }
 
     const result: Record<string, unknown> = {

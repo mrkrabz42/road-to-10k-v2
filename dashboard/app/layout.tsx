@@ -11,7 +11,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Mr 10Krabs | Market Analysis",
+  title: "The World Is Yours | Market Analysis",
   description: "Road to 10K v2 - Market analysis assistant for human traders",
 };
 

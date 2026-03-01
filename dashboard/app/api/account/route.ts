@@ -1,13 +1,9 @@
 import { NextResponse } from "next/server";
-import { fetchTrading } from "@/lib/alpaca";
+import { fetchAccount } from "@/lib/oanda";
 
 export async function GET() {
   try {
-    const res = await fetchTrading("/account");
-    if (!res.ok) {
-      return NextResponse.json({ error: "Failed to fetch account" }, { status: res.status });
-    }
-    const data = await res.json();
+    const data = await fetchAccount();
     return NextResponse.json(data);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";

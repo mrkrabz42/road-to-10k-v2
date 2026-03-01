@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
@@ -48,10 +49,17 @@ export function Sidebar() {
         "flex items-center gap-3 px-4 py-5 border-b border-sidebar-border",
         collapsed && "justify-center px-2"
       )}>
-        <span className="text-2xl flex-shrink-0">🦀</span>
+        <Image
+          src="/logo.png"
+          alt="The World Is Yours"
+          width={collapsed ? 36 : 48}
+          height={collapsed ? 36 : 48}
+          className="flex-shrink-0 rounded-md object-contain"
+          priority
+        />
         {!collapsed && (
           <div className="overflow-hidden">
-            <h1 className="text-sm font-bold text-white whitespace-nowrap">Mr 10Krabs</h1>
+            <h1 className="text-sm font-bold text-white whitespace-nowrap tracking-widest">THE WORLD IS YOURS</h1>
             <span className="text-[10px] text-pink font-medium">ANALYSIS MODE</span>
           </div>
         )}

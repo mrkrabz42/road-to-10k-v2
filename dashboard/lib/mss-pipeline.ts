@@ -1,4 +1,5 @@
-import { fetchData } from "@/lib/alpaca";
+import { fetchCandles, type Bar } from "@/lib/oanda";
+export type { Bar };
 
 // ── Session definitions (UTC) ──────────────────────────────────────────
 export const SESSIONS = [
@@ -12,11 +13,6 @@ export function getSessionForMinute(minuteOfDay: number): string {
     if (minuteOfDay >= s.start && minuteOfDay < s.end) return s.name;
   }
   return "OUTSIDE";
-}
-
-// ── Interfaces ─────────────────────────────────────────────────────────
-export interface Bar {
-  t: string; o: number; h: number; l: number; c: number; v: number;
 }
 
 export interface CP {
@@ -94,25 +90,14 @@ export interface SweepEvent {
   close_price: number;
 }
 
-// ── Data fetching ──────────────────────────────────────────────────────
+// ── Data fetching (delegates to OANDA) ────────────────────────────────
 export async function fetchBars(
   symbol: string,
   start: string,
   end: string,
   timeframe = "1Min",
 ): Promise<Bar[]> {
-  const allBars: Bar[] = [];
-  let pageToken: string | null = null;
-  do {
-    let url = `/stocks/${symbol}/bars?timeframe=${timeframe}&start=${start}&end=${end}&feed=iex&limit=10000`;
-    if (pageToken) url += `&page_token=${pageToken}`;
-    const res = await fetchData(url);
-    if (!res.ok) throw new Error(`Alpaca bars API error: ${res.status}`);
-    const data = await res.json();
-    if (data.bars) allBars.push(...data.bars);
-    pageToken = data.next_page_token || null;
-  } while (pageToken);
-  return allBars;
+  return fetchCandles(symbol, start, end, timeframe);
 }
 
 // ── ATR(14) ────────────────────────────────────────────────────────────

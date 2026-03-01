@@ -468,7 +468,7 @@ const KNOWLEDGE: KnowledgeEntry[] = [
       let base =
         "Yes — MSS data is live and dynamic.\n\n" +
         "How it works:\n" +
-        "- The /api/bot/mss endpoint fetches fresh 1-min SPY bars from Alpaca on EVERY request\n" +
+        "- The /api/bot/mss endpoint fetches fresh 1-min bars from OANDA on EVERY request\n" +
         "- It walks back up to 5 days to find the most recent trading day with bars\n" +
         "- The full MSS pipeline (ATR, swings, detection, acceptance) runs on the fetched bars\n" +
         "- When the NY market opens and new bars flow in, the pipeline will detect new MSS events automatically\n\n" +
@@ -604,7 +604,7 @@ const KNOWLEDGE: KnowledgeEntry[] = [
       "This retrace is the ideal entry point — you're entering with institutional order flow.\n\n" +
       "Entry logic: wait for MSS -> identify FVG/OB zone -> enter on retrace into that zone -> " +
       "stop-loss below/above the MSS origin -> target the next key level.\n\n" +
-      "The bot's execution module will use bracket orders via Alpaca (entry + SL + TP).",
+      "The bot provides analysis to assist human trading decisions via OANDA.",
   },
 
   // ===== What do you know / help =====

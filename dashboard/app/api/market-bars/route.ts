@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchData } from "@/lib/alpaca";
+import { fetchCandles, fetchPrices } from "@/lib/oanda";
 
 export async function GET(req: NextRequest) {
   try {
-    const symbol = req.nextUrl.searchParams.get("symbol") || "SPY";
+    const symbol = req.nextUrl.searchParams.get("symbol") || "NAS100_USD";
     const timeframe = req.nextUrl.searchParams.get("timeframe") || "5Min";
     const days = parseInt(req.nextUrl.searchParams.get("days") || "5", 10);
 
@@ -15,33 +15,17 @@ export async function GET(req: NextRequest) {
       start.setTime(start.getTime() - 86400000);
     }
 
-    const allBars: { t: string; o: number; h: number; l: number; c: number; v: number }[] = [];
-    let pageToken: string | null = null;
-
-    do {
-      let url = `/stocks/${symbol}/bars?timeframe=${timeframe}&start=${start.toISOString()}&end=${now.toISOString()}&feed=iex&limit=10000`;
-      if (pageToken) url += `&page_token=${pageToken}`;
-      const res = await fetchData(url);
-      if (!res.ok) throw new Error(`Alpaca bars error: ${res.status}`);
-      const data = await res.json();
-      if (data.bars) allBars.push(...data.bars);
-      pageToken = data.next_page_token || null;
-    } while (pageToken);
-
-    // Latest quote for live price line
-    const quoteRes = await fetchData(`/stocks/${symbol}/quotes/latest?feed=iex`);
-    let livePrice = 0;
-    if (quoteRes.ok) {
-      const q = await quoteRes.json();
-      if (q.quote) livePrice = q.quote.ap || q.quote.bp || 0;
-    }
+    const [bars, prices] = await Promise.all([
+      fetchCandles(symbol, start.toISOString(), now.toISOString(), timeframe),
+      fetchPrices([symbol]),
+    ]);
 
     return NextResponse.json({
       symbol,
       timeframe,
-      bars: allBars,
-      livePrice,
-      count: allBars.length,
+      bars,
+      livePrice: prices[symbol] ?? 0,
+      count: bars.length,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Unknown error";

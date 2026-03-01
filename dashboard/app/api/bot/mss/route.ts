@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import {
   fetchBars,
   computeATR,
@@ -1181,9 +1181,9 @@ function buildEnvironmentSummary(snap: CtxSnap, evt: CtxEvent | null): string {
   return sentence;
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    const symbol = "SPY";
+    const symbol = req.nextUrl.searchParams.get("symbol") || "NAS100_USD";
     const now = new Date();
 
     const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0));

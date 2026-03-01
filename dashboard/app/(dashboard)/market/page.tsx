@@ -5,6 +5,7 @@ import { useState, useCallback, Suspense } from "react";
 import useSWR from "swr";
 import { ArrowLeft, ArrowUp, ArrowDown } from "lucide-react";
 import { LiveChart, type BarData } from "@/components/charts/live-chart";
+import { getInstrument, formatInstrumentPrice } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -21,16 +22,14 @@ const TIMEFRAMES = [
 
 type Timeframe = (typeof TIMEFRAMES)[number];
 
-function formatPrice(v: number) {
-  return v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
 function MarketViewInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const symbol = searchParams.get("symbol") || "SPY";
+  const symbol = searchParams.get("symbol") || "NAS100_USD";
+  const instrument = getInstrument(symbol);
+  const displayName = instrument?.displayName ?? symbol;
 
-  const [timeframe, setTimeframe] = useState<Timeframe>(TIMEFRAMES[1]); // default 5m
+  const [timeframe, setTimeframe] = useState<Timeframe>(TIMEFRAMES[1]);
   const [crosshair, setCrosshair] = useState<{
     time: string; open: number; high: number; low: number; close: number; volume: number;
   } | null>(null);
@@ -44,7 +43,6 @@ function MarketViewInner() {
   const bars: BarData[] = data?.bars ?? [];
   const livePrice: number = data?.livePrice ?? 0;
 
-  // Compute OHLC from current bar or crosshair
   const lastBar = bars.length > 0 ? bars[bars.length - 1] : null;
   const displayBar = crosshair || (lastBar ? {
     time: lastBar.t,
@@ -55,13 +53,14 @@ function MarketViewInner() {
     volume: lastBar.v,
   } : null);
 
-  // Price change from first bar
   const firstBar = bars.length > 0 ? bars[0] : null;
   const currentPrice = livePrice || (lastBar?.c ?? 0);
   const openPrice = firstBar?.o ?? 0;
   const change = currentPrice - openPrice;
   const changePct = openPrice > 0 ? change / openPrice : 0;
   const isPositive = change >= 0;
+
+  const fmtPrice = (v: number) => formatInstrumentPrice(v, symbol);
 
   const handleCrosshairMove = useCallback((data: typeof crosshair) => {
     setCrosshair(data);
@@ -80,20 +79,20 @@ function MarketViewInner() {
           </button>
 
           <div className="flex items-center gap-3">
-            <span className="text-lg font-bold text-white">{symbol}</span>
-            <span className="text-sm text-muted-foreground">S&P 500 ETF</span>
+            <span className="text-lg font-bold text-white">{instrument?.shortName ?? symbol}</span>
+            <span className="text-sm text-muted-foreground">{displayName}</span>
           </div>
 
           <div className="flex items-center gap-2 ml-4">
             <span className="text-lg font-bold text-white">
-              ${formatPrice(currentPrice)}
+              ${fmtPrice(currentPrice)}
             </span>
             <span className={cn(
               "flex items-center gap-0.5 text-sm font-semibold",
               isPositive ? "text-success" : "text-loss"
             )}>
               {isPositive ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
-              {isPositive ? "+" : ""}{formatPrice(Math.abs(change))}
+              {isPositive ? "+" : ""}{fmtPrice(Math.abs(change))}
               {" "}({isPositive ? "+" : ""}{(changePct * 100).toFixed(2)}%)
             </span>
           </div>
@@ -102,10 +101,10 @@ function MarketViewInner() {
         {/* OHLCV display */}
         {displayBar && (
           <div className="hidden md:flex items-center gap-4 text-xs font-mono">
-            <span className="text-muted-foreground">O <span className="text-white">{formatPrice(displayBar.open)}</span></span>
-            <span className="text-muted-foreground">H <span className="text-success">{formatPrice(displayBar.high)}</span></span>
-            <span className="text-muted-foreground">L <span className="text-loss">{formatPrice(displayBar.low)}</span></span>
-            <span className="text-muted-foreground">C <span className="text-white">{formatPrice(displayBar.close)}</span></span>
+            <span className="text-muted-foreground">O <span className="text-white">{fmtPrice(displayBar.open)}</span></span>
+            <span className="text-muted-foreground">H <span className="text-success">{fmtPrice(displayBar.high)}</span></span>
+            <span className="text-muted-foreground">L <span className="text-loss">{fmtPrice(displayBar.low)}</span></span>
+            <span className="text-muted-foreground">C <span className="text-white">{fmtPrice(displayBar.close)}</span></span>
             <span className="text-muted-foreground">V <span className="text-blue-400">{Math.round(displayBar.volume).toLocaleString()}</span></span>
           </div>
         )}
@@ -133,7 +132,7 @@ function MarketViewInner() {
       <div className="flex-1 min-h-0">
         {isLoading && bars.length === 0 ? (
           <div className="flex items-center justify-center h-full text-muted-foreground">
-            Loading {symbol} data...
+            Loading {displayName} data...
           </div>
         ) : (
           <LiveChart
