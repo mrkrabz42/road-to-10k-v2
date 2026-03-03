@@ -2,7 +2,6 @@ export const REFRESH_INTERVALS = {
   BOT_STATUS: 10_000,
   FUNDAMENTALS: 300_000,    // 5 minutes
   NEWS_CALENDAR: 60_000,    // 1 minute
-  STRATEGY_SCORES: 30_000,  // 30 seconds
 } as const;
 
 import type { TimezoneKey, TimezoneOption, MarketConfig, NavItem } from "./types";
@@ -64,7 +63,6 @@ export const NAV_ITEMS: NavItem[] = [
   { key: "dashboard", label: "Dashboard", icon: "LayoutDashboard", href: "/" },
   { key: "news", label: "News", icon: "Globe", href: "/news" },
   { key: "bot", label: "Bot Status", icon: "Activity", href: "/bot" },
-  { key: "strategy", label: "Strategy", icon: "Brain", href: "/strategy" },
   { key: "backtest", label: "Backtest", icon: "CandlestickChart", href: "/backtest" },
 ];
 

@@ -24,11 +24,6 @@ from bot.strategies.base_strategy import Signal
 from bot.utils.helpers import is_market_open
 from bot.pipeline.snapshot_pipeline import build_enriched_snapshot, get_latest_context
 
-# Feedback loop
-from bot.storage.trade_journal import TradeJournal
-from bot.feedback.strategy_scorecard import StrategyScorecard
-from bot.feedback import adaptive_sizer
-
 # Initialize logger (triggers log file setup)
 import bot.utils.logger  # noqa: F401
 
@@ -104,12 +99,6 @@ def _run_pipeline_for_signal(symbol: str, df_bars) -> dict:
         return {}
 
 
-# ── Module-level feedback components ─────────────────────────────────────────
-
-_journal = TradeJournal()
-_scorecard = StrategyScorecard(_journal)
-
-
 def run_scan_cycle():
     """One full scan → analyze → report cycle (no execution)."""
     if not is_market_open():
@@ -118,19 +107,8 @@ def run_scan_cycle():
 
     logger.info("--- Starting analysis cycle ---")
 
-    # Refresh strategy scorecard from closed trades
-    _scorecard.refresh()
-
-    # Build strategy scores dict for the aggregator
-    all_scores = _scorecard.get_all_scores()
-    strategy_scores = {
-        k.split(":")[0]: v["composite_score"]
-        for k, v in all_scores.items()
-        if k.endswith(":ALL")
-    }
-
-    # 1. Scan watchlist for signals (with scorecard weighting)
-    signals = scan_watchlist(strategy_scores=strategy_scores)
+    # 1. Scan watchlist for signals
+    signals = scan_watchlist()
 
     if not signals:
         logger.info("No actionable signals this cycle")
@@ -140,8 +118,6 @@ def run_scan_cycle():
     for sig in signals:
         symbol = sig["symbol"]
         signal_type = sig["signal"]
-        strategy_name = sig.get("strategy", "unknown")
-        confidence = sig.get("confidence", 0.7)
 
         try:
             if signal_type == Signal.SELL.value:
@@ -151,30 +127,17 @@ def run_scan_cycle():
             if signal_type == Signal.BUY.value:
                 logger.info(f"[{symbol}] BUY signal detected — running full analysis pipeline")
 
-                # Compute Kelly-adjusted risk for this strategy
-                kelly_f = _scorecard.get_kelly_fraction(strategy_name)
-                trade_count = _scorecard.get_trade_count(strategy_name)
-                effective_risk = adaptive_sizer.effective_risk_pct(kelly_f, trade_count)
-
-                logger.info(
-                    f"[{symbol}] Adaptive sizing: Kelly={kelly_f:.2f} "
-                    f"trades={trade_count} → risk={effective_risk:.1%} "
-                    f"confidence={confidence:.2f}"
-                )
-
                 # Fetch bars for pipeline
                 df_bars = get_historical_bars(symbol, timeframe="day", days_back=200)
 
                 # Run full enriched snapshot pipeline
                 ctx = _run_pipeline_for_signal(symbol, df_bars)
-                regime = ctx.get("regime", "TRANSITION") if ctx else "TRANSITION"
 
                 if ctx:
                     logger.info(
                         f"[{symbol}] ANALYSIS COMPLETE — "
                         f"Grade: {ctx.get('setup_grade', 'N/A')} | "
-                        f"Bias: {ctx.get('bar_trade_bias', 'N/A')} | "
-                        f"Risk: {effective_risk:.1%}"
+                        f"Bias: {ctx.get('bar_trade_bias', 'N/A')}"
                     )
 
         except Exception as e:
@@ -204,7 +167,6 @@ def main():
         schedule.run_pending()
         time.sleep(1)
 
-    _journal.close()
     logger.info("Analyzer stopped. Goodbye.")
 
 

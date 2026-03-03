@@ -57,26 +57,15 @@ class RiskManager:
             return False
         return True
 
-    def calculate_position_size(
-        self,
-        entry_price: float,
-        stop_loss_price: float,
-        effective_risk_pct: float | None = None,
-    ) -> int:
+    def calculate_position_size(self, entry_price: float, stop_loss_price: float) -> int:
         """Calculate number of shares based on risk per trade.
 
-        Args:
-            entry_price: Intended entry price.
-            stop_loss_price: Stop-loss price.
-            effective_risk_pct: Adaptive risk % from Kelly sizing.
-                                If None, uses MAX_RISK_PER_TRADE (2%).
-                                NEVER exceeds MAX_RISK_PER_TRADE.
+        Risk per trade = MAX_RISK_PER_TRADE * portfolio_value
+        Shares = risk_amount / (entry_price - stop_loss_price)
         """
         account = get_account_info()
         portfolio_value = account["portfolio_value"]
-        risk_pct = effective_risk_pct if effective_risk_pct is not None else MAX_RISK_PER_TRADE
-        risk_pct = min(risk_pct, MAX_RISK_PER_TRADE)  # NEVER exceed cap
-        risk_amount = portfolio_value * risk_pct
+        risk_amount = portfolio_value * MAX_RISK_PER_TRADE
 
         risk_per_share = abs(entry_price - stop_loss_price)
         if risk_per_share <= 0:
@@ -97,7 +86,7 @@ class RiskManager:
 
         logger.info(
             f"Position size: {shares} shares @ ${entry_price:.2f} | "
-            f"Risk: ${risk_amount:.2f} ({risk_pct:.1%}) | "
+            f"Risk: ${risk_amount:.2f} ({MAX_RISK_PER_TRADE:.0%}) | "
             f"Stop-loss: ${stop_loss_price:.2f}"
         )
         return shares
@@ -122,21 +111,11 @@ class RiskManager:
         logger.info(f"ATR({14}): ${atr_value:.2f} | Stop-loss: ${stop_loss:.2f} ({ATR_STOP_LOSS_MULTIPLIER}x ATR below ${entry_price:.2f})")
         return round(stop_loss, 2)
 
-    def approve_trade(
-        self,
-        symbol: str,
-        entry_price: float,
-        stop_loss_price: float,
-        effective_risk_pct: float | None = None,
-    ) -> dict | None:
+    def approve_trade(self, symbol: str, entry_price: float, stop_loss_price: float) -> dict | None:
         """Run all risk checks and return approved trade details, or None if rejected.
 
-        Args:
-            effective_risk_pct: Adaptive risk % from Kelly sizing. None = default 2%.
-
         Returns:
-            dict with keys: symbol, shares, entry_price, stop_loss_price,
-            effective_risk_pct — or None
+            dict with keys: symbol, shares, entry_price, stop_loss_price — or None
         """
         # Check kill switch
         if self.check_kill_switch():
@@ -146,25 +125,18 @@ class RiskManager:
         if not self.can_open_position():
             return None
 
-        # Calculate position size (with adaptive risk)
-        shares = self.calculate_position_size(entry_price, stop_loss_price, effective_risk_pct)
+        # Calculate position size
+        shares = self.calculate_position_size(entry_price, stop_loss_price)
         if shares == 0:
             return None
-
-        actual_risk = effective_risk_pct if effective_risk_pct is not None else MAX_RISK_PER_TRADE
-        actual_risk = min(actual_risk, MAX_RISK_PER_TRADE)
 
         approved = {
             "symbol": symbol,
             "shares": shares,
             "entry_price": entry_price,
             "stop_loss_price": stop_loss_price,
-            "effective_risk_pct": actual_risk,
         }
-        logger.info(
-            f"Trade APPROVED: {symbol} x{shares} @ ${entry_price:.2f}, "
-            f"stop @ ${stop_loss_price:.2f}, risk={actual_risk:.1%}"
-        )
+        logger.info(f"Trade APPROVED: {symbol} x{shares} @ ${entry_price:.2f}, stop @ ${stop_loss_price:.2f}")
         return approved
 
     def reset_kill_switch(self):
